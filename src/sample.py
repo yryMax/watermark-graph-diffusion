@@ -9,10 +9,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.utilities.warnings import PossibleUserWarning
 
 from src import utils
-import torch.distributed as dist
 from metrics.abstract_metrics import TrainAbstractMetricsDiscrete, TrainAbstractMetrics
-
-from diffusion_model import LiftedDenoisingDiffusion
 from diffusion_model_discrete import DiscreteDenoisingDiffusion
 from diffusion.extra_features import DummyExtraFeatures, ExtraFeatures
 
@@ -63,15 +60,22 @@ def main(cfg: DictConfig):
                       logger = [])
     model = DiscreteDenoisingDiffusion(cfg=cfg, **model_kwargs)
     trainer.test(model, datamodule=datamodule, ckpt_path=checkpoint_path)
-   # trainer.save_checkpoint(checkpoint_path_weightonly, weights_only=True)
+    '''
+    # trainer.save_checkpoint(checkpoint_path_weightonly, weights_only=True)
     model_kw = trainer.model.hparams
     print(model_kw)
     # save model_kw as args
     with open('/mnt/c/repo/watermark-graph-diffusion/model/sbm-v1-args.pkl', 'wb') as f:
         pickle.dump(model_kwargs, f)
+    '''
+
+
 if __name__ == '__main__':
-    #main()
-    args = pickle.load(open('/mnt/c/repo/watermark-graph-diffusion/model/sbm-v1-args.pkl', 'rb'))
-    #print(args)
-    model = DiscreteDenoisingDiffusion.load_from_checkpoint('/mnt/c/repo/watermark-graph-diffusion/model/sbm-v1-weightonly.ckpt', **args)
-    print(model)
+    argpath = '/mnt/c/repo/watermark-graph-diffusion/model/sbm-v1-args.pkl'
+    modelpath = '/mnt/c/repo/watermark-graph-diffusion/model/sbm-v1-weightonly.ckpt'
+    args = pickle.load(open(argpath, 'rb'))
+    model = DiscreteDenoisingDiffusion.load_from_checkpoint(modelpath, **args).to('cuda')
+    model.eval()
+
+    samples = model.sample_batch_simplified(10)
+    print(samples)

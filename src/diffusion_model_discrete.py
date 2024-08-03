@@ -13,7 +13,7 @@ from src.diffusion import diffusion_utils
 from src.metrics.train_metrics import TrainLossDiscrete
 from src.metrics.abstract_metrics import SumExceptBatchMetric, SumExceptBatchKL, NLL
 from src import utils
-
+from tqdm import tqdm
 
 class DiscreteDenoisingDiffusion(pl.LightningModule):
     def __init__(self, cfg, dataset_infos, train_metrics, sampling_metrics, visualization_tools, extra_features,
@@ -593,6 +593,46 @@ class DiscreteDenoisingDiffusion(pl.LightningModule):
                                        f'graphs/{self.name}/epoch{self.current_epoch}_b{batch_id}/')
             self.visualization_tools.visualize(result_path, molecule_list, save_final)
             self.print("Done.")
+
+        return molecule_list
+
+
+    @torch.no_grad()
+    def sample_batch_simplified(
+            self,
+            batch_size: int
+    ):
+        n_nodes = self.node_dist.sample_n(batch_size, self.device)
+
+        n_max = torch.max(n_nodes).item()
+
+        arange = torch.arange(n_max, device=self.device).unsqueeze(0).expand(batch_size, -1)
+        node_mask = arange < n_nodes.unsqueeze(1)
+
+        z_T = diffusion_utils.sample_discrete_feature_noise(limit_dist=self.limit_dist, node_mask=node_mask)
+        X, E, y = z_T.X, z_T.E, z_T.y
+
+        assert (E == torch.transpose(E, 1, 2)).all()
+
+        # 使用 tqdm 添加进度条
+        for s_int in tqdm(reversed(range(0, self.T)), desc="Sampling Progress"):
+            s_array = s_int * torch.ones((batch_size, 1)).type_as(y)
+            t_array = s_array + 1
+            s_norm = s_array / self.T
+            t_norm = t_array / self.T
+
+            sampled_s, discrete_sampled_s = self.sample_p_zs_given_zt(s_norm, t_norm, X, E, y, node_mask)
+            X, E, y = sampled_s.X, sampled_s.E, sampled_s.y
+
+        sampled_s = sampled_s.mask(node_mask, collapse=True)
+        X, E, y = sampled_s.X, sampled_s.E, sampled_s.y
+
+        molecule_list = []
+        for i in range(batch_size):
+            n = n_nodes[i]
+            atom_types = X[i, :n].cpu()
+            edge_types = E[i, :n, :n].cpu()
+            molecule_list.append([atom_types, edge_types])
 
         return molecule_list
 
