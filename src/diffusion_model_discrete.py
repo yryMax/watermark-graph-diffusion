@@ -614,7 +614,6 @@ class DiscreteDenoisingDiffusion(pl.LightningModule):
 
         assert (E == torch.transpose(E, 1, 2)).all()
 
-        # 使用 tqdm 添加进度条
         for s_int in tqdm(reversed(range(0, self.T)), desc="Sampling Progress"):
             s_array = s_int * torch.ones((batch_size, 1)).type_as(y)
             t_array = s_array + 1
@@ -687,6 +686,37 @@ class DiscreteDenoisingDiffusion(pl.LightningModule):
 
         X_s = F.one_hot(sampled_s.X, num_classes=self.Xdim_output).float()
         E_s = F.one_hot(sampled_s.E, num_classes=self.Edim_output).float()
+        assert (E_s == torch.transpose(E_s, 1, 2)).all()
+        assert (X_t.shape == X_s.shape) and (E_t.shape == E_s.shape)
+
+        out_one_hot = utils.PlaceHolder(X=X_s, E=E_s, y=torch.zeros(y_t.shape[0], 0))
+        out_discrete = utils.PlaceHolder(X=X_s, E=E_s, y=torch.zeros(y_t.shape[0], 0))
+
+        return out_one_hot.mask(node_mask).type_as(y_t), out_discrete.mask(node_mask, collapse=True).type_as(y_t)
+
+    def sample_step_ddim(self, s, t, X_t, E_t, y_t, node_mask):
+        """Samples from zs ~ p(zs | zt). Only used during sampling.
+           if last_step, return the graph prediction as well"""
+        alpha_s = self.noise_schedule.get_alpha_bar(t_normalized=s)
+        alpha_t = self.noise_schedule.get_alpha_bar(t_normalized=t)
+
+
+        # Neural net predictions
+        noisy_data = {'X_t': X_t, 'E_t': E_t, 'y_t': y_t, 't': t, 'node_mask': node_mask}
+        extra_data = self.compute_extra_data(noisy_data)
+        pred = self.forward(noisy_data, extra_data, node_mask)
+
+        # Normalize predictions
+        pred_X = F.softmax(pred.X, dim=-1)               # bs, n, d0
+        pred_E = F.softmax(pred.E, dim=-1)               # bs, n, n, d0
+
+        X_s = (X_t - (1 - alpha_t).sqrt() * pred_X) / alpha_t.sqrt() * alpha_s.sqrt() + (
+                    1 - alpha_s).sqrt() * pred_X
+
+        E_s = (E_t - (1 - alpha_t).sqrt() * pred_E) / alpha_t.sqrt() * alpha_s.sqrt() + (
+                    1 - alpha_s).sqrt() * pred_E
+
+        print(E_s)
 
         assert (E_s == torch.transpose(E_s, 1, 2)).all()
         assert (X_t.shape == X_s.shape) and (E_t.shape == E_s.shape)

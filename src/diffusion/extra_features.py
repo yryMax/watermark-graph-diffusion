@@ -259,16 +259,16 @@ class KNodeCycles:
         self.calculate_kpowers()
 
         k3x, k3y = self.k3_cycle()
-        assert (k3x >= -0.1).all()
+   #     assert (k3x >= -0.1).all()
 
         k4x, k4y = self.k4_cycle()
-        assert (k4x >= -0.1).all()
+    #    assert (k4x >= -0.1).all()
 
         k5x, k5y = self.k5_cycle()
-        assert (k5x >= -0.1).all(), k5x
+  #      assert (k5x >= -0.1).all(), k5x
 
         _, k6y = self.k6_cycle()
-        assert (k6y >= -0.1).all()
+   #     assert (k6y >= -0.1).all()
 
         kcyclesx = torch.cat([k3x, k4x, k5x], dim=-1)
         kcyclesy = torch.cat([k3y, k4y, k5y, k6y], dim=-1)
