@@ -77,4 +77,6 @@ if __name__ == '__main__':
     model = DiscreteDenoisingDiffusion.load_from_checkpoint(modelpath, **args).to('cuda')
     model.eval()
 
-    samples = model.sample_batch_simplified(1)
+    samples = model.sample_batch_simplified(10)
+    model_perfs = model.sampling_metrics.test_result(samples)
+

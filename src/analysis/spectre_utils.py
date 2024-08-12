@@ -856,6 +856,91 @@ class SpectreSamplingMetrics(nn.Module):
         if wandb.run:
             wandb.log(to_log, commit=False)
 
+    def test_result(self, generated_graphs: list, test=True):
+        reference_graphs = self.test_graphs if test else self.val_graphs
+        print(f"Computing sampling metrics between {len(generated_graphs)} generated graphs and {len(reference_graphs)}"
+              f" test graphs -- emd computation: {self.compute_emd}")
+        networkx_graphs = []
+        adjacency_matrices = []
+        print("Building networkx graphs...")
+        for graph in generated_graphs:
+            node_types, edge_types = graph
+            A = edge_types.bool().cpu().numpy()
+            adjacency_matrices.append(A)
+
+            nx_graph = nx.from_numpy_array(A)
+            networkx_graphs.append(nx_graph)
+
+        np.savez('generated_adjs.npz', *adjacency_matrices)
+
+        if 'degree' in self.metrics_list:
+            print("Computing degree stats..")
+            degree = degree_stats(reference_graphs, networkx_graphs, is_parallel=True,
+                                  compute_emd=self.compute_emd)
+            if wandb.run:
+                wandb.run.summary['degree'] = degree
+
+        to_log = {}
+
+        if 'spectre' in self.metrics_list:
+            print("Computing spectre stats...")
+            spectre = spectral_stats(reference_graphs, networkx_graphs, is_parallel=True, n_eigvals=-1,
+                                     compute_emd=self.compute_emd)
+
+            to_log['spectre'] = spectre
+            if wandb.run:
+              wandb.run.summary['spectre'] = spectre
+
+        if 'clustering' in self.metrics_list:
+            print("Computing clustering stats...")
+            clustering = clustering_stats(reference_graphs, networkx_graphs, bins=100, is_parallel=True,
+                                          compute_emd=self.compute_emd)
+            to_log['clustering'] = clustering
+            if wandb.run:
+                wandb.run.summary['clustering'] = clustering
+
+        if 'motif' in self.metrics_list:
+            print("Computing motif stats")
+            motif = motif_stats(reference_graphs, networkx_graphs, motif_type='4cycle', ground_truth_match=None, bins=100,
+                                compute_emd=self.compute_emd)
+            to_log['motif'] = motif
+            if wandb.run:
+                wandb.run.summary['motif'] = motif
+
+        if 'orbit' in self.metrics_list:
+            print("Computing orbit stats...")
+            orbit = orbit_stats_all(reference_graphs, networkx_graphs, compute_emd=self.compute_emd)
+            to_log['orbit'] = orbit
+            if wandb.run:
+                wandb.run.summary['orbit'] = orbit
+
+        if 'sbm' in self.metrics_list:
+            print("Computing accuracy...")
+            acc = eval_acc_sbm_graph(networkx_graphs, refinement_steps=100, strict=True)
+            to_log['sbm_acc'] = acc
+            if wandb.run:
+                wandb.run.summary['sbmacc'] = acc
+
+        if 'planar' in self.metrics_list:
+            print('Computing planar accuracy...')
+            planar_acc = eval_acc_planar_graph(networkx_graphs)
+            to_log['planar_acc'] = planar_acc
+            if wandb.run:
+                wandb.run.summary['planar_acc'] = planar_acc
+
+        if 'sbm' or 'planar' in self.metrics_list:
+            print("Computing all fractions...")
+            frac_unique, frac_unique_non_isomorphic, fraction_unique_non_isomorphic_valid = eval_fraction_unique_non_isomorphic_valid(
+                networkx_graphs, self.train_graphs, is_sbm_graph if 'sbm' in self.metrics_list else is_planar_graph)
+            frac_non_isomorphic = 1.0 - eval_fraction_isomorphic(networkx_graphs, self.train_graphs)
+            to_log.update({'sampling/frac_unique': frac_unique,
+                           'sampling/frac_unique_non_iso': frac_unique_non_isomorphic,
+                           'sampling/frac_unic_non_iso_valid': fraction_unique_non_isomorphic_valid,
+                           'sampling/frac_non_iso': frac_non_isomorphic})
+
+        print("Sampling statistics", to_log)
+        return to_log
+
     def reset(self):
         pass
 

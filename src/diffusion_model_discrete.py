@@ -236,8 +236,6 @@ class DiscreteDenoisingDiffusion(pl.LightningModule):
         return {'loss': nll}
 
     def on_test_epoch_end(self) -> None:
-        print("end")
-        return
         """ Measure likelihood on a test set and compute stability metrics. """
         metrics = [self.test_nll.compute(), self.test_X_kl.compute(), self.test_E_kl.compute(),
                    self.test_X_logp.compute(), self.test_E_logp.compute()]
@@ -600,40 +598,47 @@ class DiscreteDenoisingDiffusion(pl.LightningModule):
     @torch.no_grad()
     def sample_batch_simplified(
             self,
-            batch_size: int
+            batch_size: int,
+            sub_batch_size: int = 5
     ):
-        n_nodes = self.node_dist.sample_n(batch_size, self.device)
+        molecule_list = []
+        num_batches = (batch_size + sub_batch_size - 1) // sub_batch_size
 
-        n_max = torch.max(n_nodes).item()
+        for batch_idx in tqdm(range(num_batches)):
+            current_batch_size = min(sub_batch_size, batch_size - batch_idx * sub_batch_size)
 
-        arange = torch.arange(n_max, device=self.device).unsqueeze(0).expand(batch_size, -1)
-        node_mask = arange < n_nodes.unsqueeze(1)
+            n_nodes = self.node_dist.sample_n(current_batch_size, self.device)
+            n_max = torch.max(n_nodes).item()
 
-        z_T = diffusion_utils.sample_discrete_feature_noise(limit_dist=self.limit_dist, node_mask=node_mask)
-        X, E, y = z_T.X, z_T.E, z_T.y
+            arange = torch.arange(n_max, device=self.device).unsqueeze(0).expand(current_batch_size, -1)
+            node_mask = arange < n_nodes.unsqueeze(1)
 
-        assert (E == torch.transpose(E, 1, 2)).all()
+            z_T = diffusion_utils.sample_discrete_feature_noise(limit_dist=self.limit_dist, node_mask=node_mask)
+            X, E, y = z_T.X, z_T.E, z_T.y
 
-        for s_int in tqdm(reversed(range(0, self.T)), desc="Sampling Progress"):
-            s_array = s_int * torch.ones((batch_size, 1)).type_as(y)
-            t_array = s_array + 1
-            s_norm = s_array / self.T
-            t_norm = t_array / self.T
+            assert (E == torch.transpose(E, 1, 2)).all()
 
-            sampled_s, discrete_sampled_s = self.sample_p_zs_given_zt(s_norm, t_norm, X, E, y, node_mask)
+            for s_int in reversed(range(0, self.T)):
+                s_array = s_int * torch.ones((current_batch_size, 1)).type_as(y)
+                t_array = s_array + 1
+                s_norm = s_array / self.T
+                t_norm = t_array / self.T
+
+                sampled_s, discrete_sampled_s = self.sample_p_zs_given_zt(s_norm, t_norm, X, E, y, node_mask)
+                X, E, y = sampled_s.X, sampled_s.E, sampled_s.y
+
+            sampled_s = sampled_s.mask(node_mask, collapse=True)
             X, E, y = sampled_s.X, sampled_s.E, sampled_s.y
 
-        sampled_s = sampled_s.mask(node_mask, collapse=True)
-        X, E, y = sampled_s.X, sampled_s.E, sampled_s.y
+            for i in range(current_batch_size):
+                n = n_nodes[i]
+                atom_types = X[i, :n].cpu()
+                edge_types = E[i, :n, :n].cpu()
+                molecule_list.append([atom_types, edge_types])
 
-        molecule_list = []
-        for i in range(batch_size):
-            n = n_nodes[i]
-            atom_types = X[i, :n].cpu()
-            edge_types = E[i, :n, :n].cpu()
-            molecule_list.append([atom_types, edge_types])
-
+        assert len(molecule_list) == batch_size
         return molecule_list
+
 
     def sample_p_zs_given_zt(self, s, t, X_t, E_t, y_t, node_mask):
         """Samples from zs ~ p(zs | zt). Only used during sampling.
