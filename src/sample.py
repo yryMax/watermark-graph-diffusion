@@ -1,5 +1,6 @@
 import graph_tool as gt
 import hydra
+import numpy as np
 import torch
 import pickle
 from diffusion_model_discrete import DiscreteDenoisingDiffusion
@@ -77,6 +78,14 @@ if __name__ == '__main__':
     model = DiscreteDenoisingDiffusion.load_from_checkpoint(modelpath, **args).to('cuda')
     model.eval()
 
-    samples = model.sample_batch_simplified(10)
-    model_perfs = model.sampling_metrics.test_result(samples)
+    prob = model.get_node_prob()
+    print(prob)
+
+    arr = np.array(prob)
+    np.save('node_dist.npy', arr)
+
+
+    #samples = model.sample_batch_simplified(1)
+    #model_perfs = model.sampling_metrics.test_result(samples)
+
 

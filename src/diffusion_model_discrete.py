@@ -594,6 +594,8 @@ class DiscreteDenoisingDiffusion(pl.LightningModule):
 
         return molecule_list
 
+    def get_node_prob(self):
+        return self.node_dist.prob
 
     @torch.no_grad()
     def sample_batch_simplified(
