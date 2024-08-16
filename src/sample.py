@@ -78,11 +78,16 @@ if __name__ == '__main__':
     model = DiscreteDenoisingDiffusion.load_from_checkpoint(modelpath, **args).to('cuda')
     model.eval()
 
-    prob = model.get_node_prob()
-    print(prob)
+    samples = model.sample_batch_simplified(1000)
+    model_perfs = model.sampling_metrics.test_result(samples)
+    print(model_perfs)
 
-    arr = np.array(prob)
-    np.save('node_dist.npy', arr)
+
+    #prob = model.get_node_prob()
+    #print(prob)
+
+    #arr = np.array(prob)
+    #np.save('node_dist.npy', arr)
 
 
     #samples = model.sample_batch_simplified(1)

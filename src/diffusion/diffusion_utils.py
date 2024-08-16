@@ -1,11 +1,8 @@
 import torch
 from torch.nn import functional as F
-import numpy as np
 import math
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.backends import default_backend
 from src.utils import PlaceHolder
-import os
+from src.watermark import *
 
 def sum_except_batch(x):
     return x.reshape(x.size(0), -1).sum(dim=-1)
@@ -374,6 +371,7 @@ def sample_discrete_feature_noise(limit_dist, node_mask):
     U_E = e_limit.flatten(end_dim=-2).multinomial(1).reshape(bs, n_max, n_max)
     U_y = torch.empty((bs, 0))
 
+
     long_mask = node_mask.long()
     U_X = U_X.type_as(long_mask)
     U_E = U_E.type_as(long_mask)
@@ -387,58 +385,26 @@ def sample_discrete_feature_noise(limit_dist, node_mask):
 
     U_E = U_E * upper_triangular_mask
     U_E = (U_E + torch.transpose(U_E, 1, 2))
+    print("U_E:", U_E.size())
     assert (U_E == torch.transpose(U_E, 1, 2)).all()
 
     return PlaceHolder(X=U_X, E=U_E, y=U_y).mask(node_mask)
 
 
-def ciphertext_from_message(message, n_max, key=None, nonce=None):
-    if key is None:
-        key = os.urandom(32)
-    if nonce is None:
-        nonce = os.urandom(16)
 
-    if isinstance(key, str):
-        key = bytes.fromhex(key)
-    if isinstance(nonce, str):
-        nonce = bytes.fromhex(nonce)
-
-    n = n_max * (n_max - 1) // 2
-    num_votes = n // (len(message) * 8)
-    message_diffused = message * num_votes
-
-    maximum_bytes = n // 8
-
-    message_bytes = message_diffused.encode() + b'\0' * (maximum_bytes - len(message_diffused.encode()))
-    cipher = Cipher(algorithms.ChaCha20(key, nonce), mode=None, backend=default_backend())
-    encryptor = cipher.encryptor()
-    ciphertext = encryptor.update(message_bytes) + encryptor.finalize()
-    ciphertext_bits = np.unpackbits(np.frombuffer(ciphertext, dtype=np.uint8))
-    assert len(ciphertext_bits) == maximum_bytes * 8
-    return ciphertext_bits, key, nonce
-
-def sample_discrete_feature_noise_with_watermark(limit_dist, node_mask, message):
-    """ Sample from the limit distribution of the diffusion process"""
-    print(limit_dist.E)
+def sample_discrete_feature_noise_with_message(limit_dist, node_mask, message = "A"):
     bs, n_max = node_mask.shape
     x_limit = limit_dist.X[None, None, :].expand(bs, n_max, -1)
     e_limit = limit_dist.E[None, None, None, :].expand(bs, n_max, n_max, -1)
     U_X = x_limit.flatten(end_dim=-2).multinomial(1).reshape(bs, n_max)
+    U_E = e_limit.flatten(end_dim=-2).multinomial(1).reshape(bs, n_max, n_max)
     U_y = torch.empty((bs, 0))
 
-    limit_dist_E_acc = torch.zeros(limit_dist.E.shape)
-    for i in range(1, limit_dist_E_acc.shape[0]):
-        limit_dist_E_acc[i] = limit_dist.E[i] + limit_dist_E_acc[i - 1]
-    print(limit_dist_E_acc)
-
-    # GS watermark
-    ciphertext_bits, key, nonce = ciphertext_from_message(message, n_max)
-    m = torch.zeros(bs, n_max, n_max)
+    n_nodes = torch.sum(node_mask, dim=1)
     for i in range(bs):
-        for idx in range(ciphertext_bits):
-            row_idx = idx // (n_max - 1)
-            col_idx = n_max - 1 - idx % (n_max - 1)
-            u = (ciphertext_bits[idx] + np.random.uniform(0, 1)) / 2
+        G, key, nonce, offset = watermark_embedding(message, key=None, nonce=None, n=n_nodes[i].item())
+        adj_matrix = nx.to_numpy_array(G)
+        U_E[i, :n_nodes[i], :n_nodes[i]] = torch.tensor(adj_matrix)
 
 
     long_mask = node_mask.long()
@@ -446,10 +412,7 @@ def sample_discrete_feature_noise_with_watermark(limit_dist, node_mask, message)
     U_E = U_E.type_as(long_mask)
     U_y = U_y.type_as(long_mask)
     U_X = F.one_hot(U_X, num_classes=x_limit.shape[-1]).float()
-
-
     U_E = F.one_hot(U_E, num_classes=e_limit.shape[-1]).float()
-    print('one-hot: ',U_E.shape)
     # Get upper triangular part of edge noise, without main diagonal
     upper_triangular_mask = torch.zeros_like(U_E)
     indices = torch.triu_indices(row=U_E.size(1), col=U_E.size(2), offset=1)
@@ -457,8 +420,9 @@ def sample_discrete_feature_noise_with_watermark(limit_dist, node_mask, message)
 
     U_E = U_E * upper_triangular_mask
     U_E = (U_E + torch.transpose(U_E, 1, 2))
-    print('masked: ',U_E.shape)
     assert (U_E == torch.transpose(U_E, 1, 2)).all()
 
     return PlaceHolder(X=U_X, E=U_E, y=U_y).mask(node_mask)
+
+
 
