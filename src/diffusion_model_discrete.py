@@ -673,7 +673,10 @@ class DiscreteDenoisingDiffusion(pl.LightningModule):
 
     def sample_p_zs_given_zt(self, s, t, X_t, E_t, y_t, node_mask):
         """Samples from zs ~ p(zs | zt). Only used during sampling.
-           if last_step, return the graph prediction as well"""
+           if last_step, return the graph prediction as well
+           s_norm: normalized time step current
+            t_norm: normalized time step previous
+        """
         bs, n, dxs = X_t.shape
         beta_t = self.noise_schedule(t_normalized=t)  # (bs, 1)
         alpha_s_bar = self.noise_schedule.get_alpha_bar(t_normalized=s)

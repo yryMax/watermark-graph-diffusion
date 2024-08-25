@@ -228,13 +228,15 @@ def check_issues_norm_values(gamma, norm_val1, norm_val2, num_stdevs=8):
             f'1 / norm_value = {1. / max_norm_value}')
 
 
-def sample_discrete_features(probX, probE, node_mask):
+def sample_discrete_features(probX, probE, node_mask, seed=None):
     ''' Sample features from multinomial distribution with given probabilities (probX, probE, proby)
         :param probX: bs, n, dx_out        node features
         :param probE: bs, n, n, de_out     edge features
         :param proby: bs, dy_out           global features.
     '''
 
+    if seed is not None:
+        torch.manual_seed(seed)
     bs, n, _ = probX.shape
     # Noise X
     # The masked rows should define probability distributions as well
@@ -262,7 +264,6 @@ def sample_discrete_features(probX, probE, node_mask):
     E_t = torch.triu(E_t, diagonal=1)
     E_t = (E_t + torch.transpose(E_t, 1, 2))
     return PlaceHolder(X=X_t, E=E_t, y=torch.zeros(bs, 0).type_as(X_t))
-
 
 def compute_posterior_distribution(M, M_t, Qt_M, Qsb_M, Qtb_M):
     ''' M: X or E
