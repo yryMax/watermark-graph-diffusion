@@ -70,6 +70,13 @@ def main(cfg: DictConfig):
         pickle.dump(model_kwargs, f)
     '''
 
+def get_model_sbm():
+    argpath = '/mnt/c/repo/watermark-graph-diffusion/model/sbm-v1-args.pkl'
+    modelpath = '/mnt/c/repo/watermark-graph-diffusion/model/sbm-v1-weightonly.ckpt'
+    args = pickle.load(open(argpath, 'rb'))
+    model = DiscreteDenoisingDiffusion.load_from_checkpoint(modelpath, **args).to('cuda')
+    model.eval()
+    return model
 
 if __name__ == '__main__':
     argpath = '/mnt/c/repo/watermark-graph-diffusion/model/sbm-v1-args.pkl'
@@ -78,9 +85,13 @@ if __name__ == '__main__':
     model = DiscreteDenoisingDiffusion.load_from_checkpoint(modelpath, **args).to('cuda')
     model.eval()
 
-    samples = model.sample_batch_simplified(1000)
-    model_perfs = model.sampling_metrics.test_result(samples)
-    print(model_perfs)
+    samples = model.sample_one()
+    print(samples[0].size(), samples[1].size())
+    print("nodes: ", samples[0])
+    print("edges: ", samples[1])
+    print(torch.all(samples[1] == samples[1].transpose(0, 1)))
+    #model_perfs = model.sampling_metrics.test_result(samples)
+    #print(model_perfs)
 
 
     #prob = model.get_node_prob()

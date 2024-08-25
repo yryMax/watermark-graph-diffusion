@@ -640,6 +640,36 @@ class DiscreteDenoisingDiffusion(pl.LightningModule):
         assert len(molecule_list) == batch_size
         return molecule_list
 
+    @torch.no_grad()
+    def sample_one(self):
+        batch_size = 1
+        n_nodes = self.node_dist.sample_n(batch_size, self.device)
+        n_max = torch.max(n_nodes).item()
+        arange = torch.arange(n_max, device=self.device).unsqueeze(0)
+        node_mask = arange < n_nodes.unsqueeze(1)
+
+        z_T = diffusion_utils.sample_discrete_feature_noise_with_message(limit_dist=self.limit_dist,
+                                                                        node_mask=node_mask)
+        X, E, y = z_T.X, z_T.E, z_T.y
+        assert (E == torch.transpose(E, 1, 2)).all()
+
+        for s_int in reversed(range(0, self.T)):
+            s_array = s_int * torch.ones((batch_size, 1)).type_as(y)
+            t_array = s_array + 1
+            s_norm = s_array / self.T
+            t_norm = t_array / self.T
+
+            sampled_s, _ = self.sample_p_zs_given_zt(s_norm, t_norm, X, E, y, node_mask)
+            X, E, y = sampled_s.X, sampled_s.E, sampled_s.y
+
+        sampled_s = sampled_s.mask(node_mask, collapse=True)
+        X, E, y = sampled_s.X, sampled_s.E, sampled_s.y
+
+        n = n_nodes[0]
+        atom_types = X[0, :n].cpu()
+        edge_types = E[0, :n, :n].cpu()
+
+        return [atom_types, edge_types]
 
     def sample_p_zs_given_zt(self, s, t, X_t, E_t, y_t, node_mask):
         """Samples from zs ~ p(zs | zt). Only used during sampling.

@@ -385,7 +385,6 @@ def sample_discrete_feature_noise(limit_dist, node_mask):
 
     U_E = U_E * upper_triangular_mask
     U_E = (U_E + torch.transpose(U_E, 1, 2))
-    print("U_E:", U_E.size())
     assert (U_E == torch.transpose(U_E, 1, 2)).all()
 
     return PlaceHolder(X=U_X, E=U_E, y=U_y).mask(node_mask)
