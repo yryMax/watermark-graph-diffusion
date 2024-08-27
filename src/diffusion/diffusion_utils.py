@@ -233,36 +233,40 @@ def sample_discrete_features(probX, probE, node_mask, seed=None):
         :param probX: bs, n, dx_out        node features
         :param probE: bs, n, n, de_out     edge features
         :param proby: bs, dy_out           global features.
+        :param deterministic: bool         control deterministic behavior without affecting global state.
     '''
-
+    local_gen = torch.Generator(device='cuda')
     if seed is not None:
-        torch.manual_seed(seed)
+        local_gen.manual_seed(seed)
+    else:
+        local_gen.seed()
+
     bs, n, _ = probX.shape
+
     # Noise X
     # The masked rows should define probability distributions as well
     probX[~node_mask] = 1 / probX.shape[-1]
     # Flatten the probability tensor to sample with multinomial
-    probX = probX.reshape(bs * n, -1)       # (bs * n, dx_out)
+    probX = probX.reshape(bs * n, -1)  # (bs * n, dx_out)
 
     # Sample X
-    X_t = probX.multinomial(1)                                  # (bs * n, 1)
-    X_t = X_t.reshape(bs, n)     # (bs, n)
+    X_t = probX.multinomial(1, generator=local_gen)
+    X_t = X_t.reshape(bs, n)  # (bs, n)
 
     # Noise E
     # The masked rows should define probability distributions as well
     inverse_edge_mask = ~(node_mask.unsqueeze(1) * node_mask.unsqueeze(2))
     diag_mask = torch.eye(n).unsqueeze(0).expand(bs, -1, -1)
-#    print(probE[0,:])
     probE[inverse_edge_mask] = 1 / probE.shape[-1]
     probE[diag_mask.bool()] = 1 / probE.shape[-1]
 
-    probE = probE.reshape(bs * n * n, -1)    # (bs * n * n, de_out)
-   # print(probE[0,:], probX[0,:])
+    probE = probE.reshape(bs * n * n, -1)  # (bs * n * n, de_out)
 
     # Sample E
-    E_t = probE.multinomial(1).reshape(bs, n, n)   # (bs, n, n)
+    E_t = probE.multinomial(1, generator=local_gen).reshape(bs, n, n)
     E_t = torch.triu(E_t, diagonal=1)
     E_t = (E_t + torch.transpose(E_t, 1, 2))
+
     return PlaceHolder(X=X_t, E=E_t, y=torch.zeros(bs, 0).type_as(X_t))
 
 def compute_posterior_distribution(M, M_t, Qt_M, Qsb_M, Qtb_M):

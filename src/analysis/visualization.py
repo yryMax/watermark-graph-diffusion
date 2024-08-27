@@ -175,13 +175,14 @@ class NonMolecularVisualization:
         m = max(np.abs(vmin), vmax)
         vmin, vmax = -m, m
 
-        plt.figure()
-        nx.draw(graph, pos, font_size=5, node_size=node_size, with_labels=False, node_color=U[:, 1],
+        fig, ax = plt.subplots()
+        nx.draw(graph, pos, ax=ax, font_size=5, node_size=node_size, with_labels=False, node_color=U[:, 1],
                 cmap=plt.cm.coolwarm, vmin=vmin, vmax=vmax, edge_color='grey')
 
         plt.tight_layout()
         plt.savefig(path)
-        plt.close("all")
+
+        return fig
 
     def visualize(self, path: str, graphs: list, num_graphs_to_visualize: int, log='graph'):
         # define path to save figures

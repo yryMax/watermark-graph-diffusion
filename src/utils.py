@@ -5,7 +5,7 @@ from torch_geometric.utils import to_dense_adj, to_dense_batch
 import torch
 import omegaconf
 import wandb
-
+import copy
 
 def create_folders(args):
     try:
@@ -129,6 +129,12 @@ class PlaceHolder:
             self.E = self.E * e_mask1 * e_mask2
             assert torch.allclose(self.E, torch.transpose(self.E, 1, 2))
         return self
+
+    def copy(self):
+        return PlaceHolder(copy.deepcopy(self.X), copy.deepcopy(self.E), copy.deepcopy(self.y))
+
+    def get_node_amount(self):
+        return self.X.size(1)
 
 
 def setup_wandb(cfg):
