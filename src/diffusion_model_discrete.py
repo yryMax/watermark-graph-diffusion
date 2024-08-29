@@ -600,22 +600,31 @@ class DiscreteDenoisingDiffusion(pl.LightningModule):
     @torch.no_grad()
     def sample_batch_simplified(
             self,
+            watermark: str,
             batch_size: int,
-            sub_batch_size: int = 5
+            sub_batch_size: int = 1
     ):
+
+        local_gen = torch.Generator(device='cuda')
+        if watermark is not None:
+            local_gen.manual_seed(hash(watermark))
+        else:
+            local_gen.seed()
+
+
         molecule_list = []
+        gen_states = []
         num_batches = (batch_size + sub_batch_size - 1) // sub_batch_size
 
         for batch_idx in tqdm(range(num_batches)):
             current_batch_size = min(sub_batch_size, batch_size - batch_idx * sub_batch_size)
 
-            n_nodes = self.node_dist.sample_n(current_batch_size, self.device)
-            n_max = torch.max(n_nodes).item()
-
-            arange = torch.arange(n_max, device=self.device).unsqueeze(0).expand(current_batch_size, -1)
-            node_mask = arange < n_nodes.unsqueeze(1)
-            z_T = diffusion_utils.sample_discrete_feature_noise_with_message(limit_dist=self.limit_dist, node_mask=node_mask)
+            z_T = self.sample_G_T(n_nodes=torch.tensor([50]))
+            n = z_T.get_node_amount()
             X, E, y = z_T.X, z_T.E, z_T.y
+            node_mask = torch.ones((sub_batch_size, n), device=self.device, dtype=torch.bool)
+            # preserve current local gen state
+            state = local_gen.get_state()
 
             assert (E == torch.transpose(E, 1, 2)).all()
 
@@ -625,32 +634,32 @@ class DiscreteDenoisingDiffusion(pl.LightningModule):
                 s_norm = s_array / self.T
                 t_norm = t_array / self.T
 
-                sampled_s, discrete_sampled_s = self.sample_p_zs_given_zt(s_norm, t_norm, X, E, y, node_mask)
+                sampled_s, discrete_sampled_s = self.sample_p_zs_given_zt(s_norm, t_norm, X, E, y, local_gen, node_mask)
                 X, E, y = sampled_s.X, sampled_s.E, sampled_s.y
 
-            sampled_s = sampled_s.mask(node_mask, collapse=True)
-            X, E, y = sampled_s.X, sampled_s.E, sampled_s.y
 
             for i in range(current_batch_size):
-                n = n_nodes[i]
                 atom_types = X[i, :n].cpu()
                 edge_types = E[i, :n, :n].cpu()
                 molecule_list.append([atom_types, edge_types])
+                gen_states.append(state)
 
         assert len(molecule_list) == batch_size
-        return molecule_list
+        return molecule_list, gen_states
+
+
 
     def sample_G_T(self, n_nodes=None):
         batch_size = 1
         if n_nodes is None:
             n_nodes = self.node_dist.sample_n(batch_size, self.device)
         node_mask = torch.ones((batch_size, n_nodes.item()), device=self.device, dtype=torch.bool)
-        z_T = diffusion_utils.sample_discrete_feature_noise_with_message(limit_dist=self.limit_dist,
+        z_T = diffusion_utils.sample_discrete_feature_noise(limit_dist=self.limit_dist,
                                                               node_mask=node_mask)
         return z_T
 
     @torch.no_grad()
-    def sample_one(self, z_T = None, deterministic=False):
+    def sample_one(self, z_T = None, watermark=None):
         batch_size = 1
         if z_T is None:
             z_T = self.sample_G_T()
@@ -658,14 +667,12 @@ class DiscreteDenoisingDiffusion(pl.LightningModule):
         node_mask = torch.ones((batch_size, n), device=self.device, dtype=torch.bool)
         X, E, y = z_T.X, z_T.E, z_T.y
         assert (E == torch.transpose(E, 1, 2)).all()
+
         local_gen = torch.Generator(device='cuda')
-
-
-        if deterministic is True:
-            local_gen.manual_seed(42)
+        if watermark is not None:
+            local_gen.manual_seed(hash(watermark))
         else:
             local_gen.seed()
-
 
         for s_int in reversed(range(0, self.T)):
             s_array = s_int * torch.ones((batch_size, 1)).type_as(y)

@@ -15,6 +15,10 @@ from metrics.abstract_metrics import TrainAbstractMetricsDiscrete, TrainAbstract
 from diffusion_model_discrete import DiscreteDenoisingDiffusion
 from diffusion.extra_features import DummyExtraFeatures, ExtraFeatures
 
+os.environ['MASTER_ADDR'] = 'localhost'
+os.environ['MASTER_PORT'] = '12355'
+dist.init_process_group('gloo', rank=0, world_size=1)
+
 
 @hydra.main(version_base='1.3', config_path='../configs', config_name='config')
 def main(cfg: DictConfig):
@@ -79,22 +83,24 @@ def get_model_sbm():
     model.eval()
     return model
 
-if __name__ == '__main__':
-
-
-    os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = '12355'
-    dist.init_process_group('gloo', rank=0, world_size=1)
-
+def get_model_facebook():
 
     argpath = '/mnt/c/repo/watermark-graph-diffusion/model/facebook.pkl'
     modelpath = '/mnt/c/repo/watermark-graph-diffusion/model/facebook-epoch=699.ckpt'
     args = pickle.load(open(argpath, 'rb'))
-    model = DiscreteDenoisingDiffusion.load_from_checkpoint(modelpath, map_location=torch.device('cuda'), **args).to('cuda')
+    model = DiscreteDenoisingDiffusion.load_from_checkpoint(modelpath, **args).to('cuda')
     model.eval()
+    return model
 
-    samples = model.sample_batch_simplified(1)
-    print(samples[0].size(), samples[1].size())
+
+
+if __name__ == '__main__':
+
+
+
+    model = get_model_facebook()
+
+    samples = model.sample_batch_simplified("watermark", 5)
     #model_perfs = model.sampling_metrics.test_result(samples)
     #print(model_perfs)
 
