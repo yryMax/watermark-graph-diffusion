@@ -228,18 +228,13 @@ def check_issues_norm_values(gamma, norm_val1, norm_val2, num_stdevs=8):
             f'1 / norm_value = {1. / max_norm_value}')
 
 
-def sample_discrete_features(probX, probE, node_mask, seed=None):
+def sample_discrete_features(probX, probE, local_gen, node_mask):
     ''' Sample features from multinomial distribution with given probabilities (probX, probE, proby)
         :param probX: bs, n, dx_out        node features
         :param probE: bs, n, n, de_out     edge features
         :param proby: bs, dy_out           global features.
         :param deterministic: bool         control deterministic behavior without affecting global state.
     '''
-    local_gen = torch.Generator(device='cuda')
-    if seed is not None:
-        local_gen.manual_seed(seed)
-    else:
-        local_gen.seed()
 
     bs, n, _ = probX.shape
 

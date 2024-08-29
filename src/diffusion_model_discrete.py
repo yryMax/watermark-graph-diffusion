@@ -658,16 +658,21 @@ class DiscreteDenoisingDiffusion(pl.LightningModule):
         node_mask = torch.ones((batch_size, n), device=self.device, dtype=torch.bool)
         X, E, y = z_T.X, z_T.E, z_T.y
         assert (E == torch.transpose(E, 1, 2)).all()
+        local_gen = torch.Generator(device='cuda')
+
+
+        if deterministic is True:
+            local_gen.manual_seed(42)
+        else:
+            local_gen.seed()
+
 
         for s_int in reversed(range(0, self.T)):
             s_array = s_int * torch.ones((batch_size, 1)).type_as(y)
             t_array = s_array + 1
             s_norm = s_array / self.T
             t_norm = t_array / self.T
-            seed = None
-            if deterministic:
-                seed = 42 + s_int
-            sampled_s, _ = self.sample_p_zs_given_zt(s_norm, t_norm, X, E, y, node_mask, seed=seed)
+            sampled_s, _ = self.sample_p_zs_given_zt(s_norm, t_norm, X, E, y, local_gen, node_mask)
             X, E, y = sampled_s.X, sampled_s.E, sampled_s.y
 
         sampled_s = sampled_s.mask(node_mask, collapse=True)
@@ -677,7 +682,7 @@ class DiscreteDenoisingDiffusion(pl.LightningModule):
         return atom_types, edge_types
 
 
-    def sample_p_zs_given_zt(self, s, t, X_t, E_t, y_t, node_mask, seed=None):
+    def sample_p_zs_given_zt(self, s, t, X_t, E_t, y_t, local_gen, node_mask):
         """Samples from zs ~ p(zs | zt). Only used during sampling.
            if last_step, return the graph prediction as well
            s_norm: normalized time step current
@@ -727,7 +732,7 @@ class DiscreteDenoisingDiffusion(pl.LightningModule):
         assert ((prob_X.sum(dim=-1) - 1).abs() < 1e-4).all()
         assert ((prob_E.sum(dim=-1) - 1).abs() < 1e-4).all()
 
-        sampled_s = diffusion_utils.sample_discrete_features(prob_X, prob_E, node_mask=node_mask, seed=seed)
+        sampled_s = diffusion_utils.sample_discrete_features(prob_X, prob_E, local_gen, node_mask=node_mask)
 
         X_s = F.one_hot(sampled_s.X, num_classes=self.Xdim_output).float()
         E_s = F.one_hot(sampled_s.E, num_classes=self.Edim_output).float()
