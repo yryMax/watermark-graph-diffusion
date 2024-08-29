@@ -9,7 +9,7 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
 
 p = 0.0844
-prob = np.load('node_dist.npy')
+prob = np.load('../model/node_dist.npy')
 node_dist =  torch.distributions.Categorical(torch.tensor(prob))
 
 

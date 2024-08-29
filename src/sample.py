@@ -8,7 +8,8 @@ from omegaconf import DictConfig
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.utilities.warnings import PossibleUserWarning
-
+import torch.distributed as dist
+import os
 from src import utils
 from metrics.abstract_metrics import TrainAbstractMetricsDiscrete, TrainAbstractMetrics
 from diffusion_model_discrete import DiscreteDenoisingDiffusion
@@ -79,17 +80,21 @@ def get_model_sbm():
     return model
 
 if __name__ == '__main__':
-    argpath = '/mnt/c/repo/watermark-graph-diffusion/model/sbm-v1-args.pkl'
-    modelpath = '/mnt/c/repo/watermark-graph-diffusion/model/sbm-v1-weightonly.ckpt'
+
+
+    os.environ['MASTER_ADDR'] = 'localhost'
+    os.environ['MASTER_PORT'] = '12355'
+    dist.init_process_group('gloo', rank=0, world_size=1)
+
+
+    argpath = '/mnt/c/repo/watermark-graph-diffusion/model/facebook.pkl'
+    modelpath = '/mnt/c/repo/watermark-graph-diffusion/model/facebook-epoch=699.ckpt'
     args = pickle.load(open(argpath, 'rb'))
-    model = DiscreteDenoisingDiffusion.load_from_checkpoint(modelpath, **args).to('cuda')
+    model = DiscreteDenoisingDiffusion.load_from_checkpoint(modelpath, map_location=torch.device('cuda'), **args).to('cuda')
     model.eval()
 
-    samples = model.sample_one()
+    samples = model.sample_batch_simplified(1)
     print(samples[0].size(), samples[1].size())
-    print("nodes: ", samples[0])
-    print("edges: ", samples[1])
-    print(torch.all(samples[1] == samples[1].transpose(0, 1)))
     #model_perfs = model.sampling_metrics.test_result(samples)
     #print(model_perfs)
 
