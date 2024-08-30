@@ -873,14 +873,17 @@ class SpectreSamplingMetrics(nn.Module):
 
         np.savez('generated_adjs.npz', *adjacency_matrices)
 
+
+        to_log = {}
         if 'degree' in self.metrics_list:
             print("Computing degree stats..")
             degree = degree_stats(reference_graphs, networkx_graphs, is_parallel=True,
                                   compute_emd=self.compute_emd)
+            to_log['degree'] = degree
             if wandb.run:
                 wandb.run.summary['degree'] = degree
 
-        to_log = {}
+
 
         if 'spectre' in self.metrics_list:
             print("Computing spectre stats...")

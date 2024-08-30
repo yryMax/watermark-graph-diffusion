@@ -100,8 +100,10 @@ if __name__ == '__main__':
 
     model = get_model_facebook()
 
-    samples = model.sample_batch_simplified("watermark", 5)
-    #model_perfs = model.sampling_metrics.test_result(samples)
+    with open("../samples/no-watermark.pkl", "rb") as f:
+        free = pickle.load(f)
+    model.sampling_metrics.test_result(free)
+        #model_perfs = model.sampling_metrics.test_result(samples)
     #print(model_perfs)
 
 
@@ -113,6 +115,6 @@ if __name__ == '__main__':
 
 
     #samples = model.sample_batch_simplified(1)
-    #model_perfs = model.sampling_metrics.test_result(samples)
+    model_perfs = model.sampling_metrics.test_result(samples)
 
 

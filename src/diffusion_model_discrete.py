@@ -619,7 +619,7 @@ class DiscreteDenoisingDiffusion(pl.LightningModule):
         for batch_idx in tqdm(range(num_batches)):
             current_batch_size = min(sub_batch_size, batch_size - batch_idx * sub_batch_size)
 
-            z_T = self.sample_G_T(n_nodes=torch.tensor([50]))
+            z_T = self.sample_G_T()
             n = z_T.get_node_amount()
             X, E, y = z_T.X, z_T.E, z_T.y
             node_mask = torch.ones((sub_batch_size, n), device=self.device, dtype=torch.bool)
@@ -637,6 +637,9 @@ class DiscreteDenoisingDiffusion(pl.LightningModule):
                 sampled_s, discrete_sampled_s = self.sample_p_zs_given_zt(s_norm, t_norm, X, E, y, local_gen, node_mask)
                 X, E, y = sampled_s.X, sampled_s.E, sampled_s.y
 
+
+            sampled_s = sampled_s.mask(node_mask, collapse=True)
+            X, E, y = sampled_s.X, sampled_s.E, sampled_s.y
 
             for i in range(current_batch_size):
                 atom_types = X[i, :n].cpu()
