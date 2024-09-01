@@ -14,7 +14,7 @@ import numpy as np
 import networkx as nx
 import subprocess as sp
 import concurrent.futures
-
+from typing import Optional
 import pygsp as pg
 import secrets
 from string import ascii_uppercase, digits
@@ -23,6 +23,7 @@ from scipy.linalg import eigvalsh
 from scipy.stats import chi2
 from src.analysis.dist_helper import compute_mmd, gaussian_emd, gaussian, emd, gaussian_tv, disc
 from torch_geometric.utils import to_networkx
+from src.g2gcompress import Graph2GraphPairCompress
 import wandb
 
 PRINT_TIME = False
@@ -733,16 +734,27 @@ def eval_fraction_unique_non_isomorphic_valid(fake_graphs, train_graphs, validit
 
 
 class SpectreSamplingMetrics(nn.Module):
-    def __init__(self, datamodule, compute_emd, metrics_list):
+    def __init__(self, datamodule, compute_emd, metrics_list, g2gc: Optional[Graph2GraphPairCompress]=None):
         super().__init__()
 
-        self.train_graphs = self.loader_to_nx(datamodule.train_dataloader())
-        self.val_graphs = self.loader_to_nx(datamodule.val_dataloader())
-        self.test_graphs = self.loader_to_nx(datamodule.test_dataloader())
+        if g2gc:
+            train_graphs_dec = datamodule.train_dataset_orig
+            val_graphs_dec = datamodule.val_dataset_orig
+            test_graphs_dec = datamodule.test_dataset_orig
+            self.train_graphs = self.dataset_to_nx(train_graphs_dec)
+            self.val_graphs = self.dataset_to_nx(val_graphs_dec)
+            self.test_graphs = self.dataset_to_nx(test_graphs_dec)
+        else:
+            self.train_graphs = self.loader_to_nx(datamodule.train_dataloader())
+            self.val_graphs = self.loader_to_nx(datamodule.val_dataloader())
+            self.test_graphs = self.loader_to_nx(datamodule.test_dataloader())
+
         self.num_graphs_test = len(self.test_graphs)
         self.num_graphs_val = len(self.val_graphs)
         self.compute_emd = compute_emd
         self.metrics_list = metrics_list
+
+        self.g2gc = g2gc
 
     def loader_to_nx(self, loader):
         networkx_graphs = []

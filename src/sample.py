@@ -86,7 +86,17 @@ def get_model_sbm():
 def get_model_facebook():
 
     argpath = '/mnt/c/repo/watermark-graph-diffusion/model/facebook.pkl'
-    modelpath = '/mnt/c/repo/watermark-graph-diffusion/model/facebook-epoch=699.ckpt'
+    modelpath = '/mnt/c/repo/watermark-graph-diffusion/model/facebook-epoch=3099.ckpt'
+    args = pickle.load(open(argpath, 'rb'))
+    model = DiscreteDenoisingDiffusion.load_from_checkpoint(modelpath, **args).to('cuda')
+    model.eval()
+    return model
+
+
+def get_model_flickr():
+
+    argpath = '/mnt/c/repo/watermark-graph-diffusion/model/flickr.pkl'
+    modelpath = '/mnt/c/repo/watermark-graph-diffusion/model/flickr-epoch=4399.ckpt'
     args = pickle.load(open(argpath, 'rb'))
     model = DiscreteDenoisingDiffusion.load_from_checkpoint(modelpath, **args).to('cuda')
     model.eval()
@@ -98,11 +108,7 @@ if __name__ == '__main__':
 
 
 
-    model = get_model_facebook()
-
-    with open("../samples/no-watermark.pkl", "rb") as f:
-        free = pickle.load(f)
-    model.sampling_metrics.test_result(free)
+    model = get_model_flickr()
         #model_perfs = model.sampling_metrics.test_result(samples)
     #print(model_perfs)
 
