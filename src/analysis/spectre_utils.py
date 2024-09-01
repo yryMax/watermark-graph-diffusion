@@ -14,7 +14,7 @@ import numpy as np
 import networkx as nx
 import subprocess as sp
 import concurrent.futures
-from typing import Optional
+
 import pygsp as pg
 import secrets
 from string import ascii_uppercase, digits
@@ -22,9 +22,11 @@ from datetime import datetime
 from scipy.linalg import eigvalsh
 from scipy.stats import chi2
 from src.analysis.dist_helper import compute_mmd, gaussian_emd, gaussian, emd, gaussian_tv, disc
-from torch_geometric.utils import to_networkx
-from src.g2gcompress import Graph2GraphPairCompress
+from torch_geometric.utils import dense_to_sparse, to_dense_adj, to_networkx
 import wandb
+
+from src.g2gcompress import CompressedData, Graph2GraphPairCompress
+from typing import Optional
 
 PRINT_TIME = False
 __all__ = ['degree_stats', 'clustering_stats', 'orbit_stats_all', 'spectral_stats', 'eval_acc_lobster_graph']
@@ -481,7 +483,7 @@ def orbit_stats_all(graph_ref_list, graph_pred_list, compute_emd=False):
     #         total_counts_pred,
     #         kernel=gaussian_tv,
     #         is_hist=False,
-    #         sigma=30.0)  
+    #         sigma=30.0)
 
     if compute_emd:
         # mmd_dist = compute_mmd(total_counts_ref, total_counts_pred, kernel=emd, sigma=30.0)
@@ -765,6 +767,14 @@ class SpectreSamplingMetrics(nn.Module):
                                                    remove_self_loops=True))
         return networkx_graphs
 
+    def dataset_to_nx(self, dataset):
+        networkx_graphs = []
+
+        for data in dataset:
+            networkx_graphs.append(to_networkx(data, node_attrs=None, edge_attrs=None, to_undirected=True,
+                                               remove_self_loops=True))
+        return networkx_graphs
+
     def forward(self, generated_graphs: list, name, current_epoch, val_counter, local_rank, test=False):
         reference_graphs = self.test_graphs if test else self.val_graphs
         if local_rank == 0:
@@ -776,6 +786,16 @@ class SpectreSamplingMetrics(nn.Module):
             print("Building networkx graphs...")
         for graph in generated_graphs:
             node_types, edge_types = graph
+
+            if self.g2gc:
+                edge_index, edge_attr = dense_to_sparse(edge_types)
+                dec_graph = self.g2gc.decode(CompressedData(
+                    x=node_types, edge_index=edge_index, edge_attr=edge_attr))
+                node_types = dec_graph.x
+                edge_types = to_dense_adj(dec_graph.edge_index).squeeze(dim=0)
+                # Remove self-loops that form under g2gc, as ORCA can't deal with them
+                edge_types.fill_diagonal_(0.)
+
             A = edge_types.bool().cpu().numpy()
             adjacency_matrices.append(A)
 
@@ -784,11 +804,14 @@ class SpectreSamplingMetrics(nn.Module):
 
         np.savez('generated_adjs.npz', *adjacency_matrices)
 
+        to_log = {}
+
         if 'degree' in self.metrics_list:
             if local_rank == 0:
                 print("Computing degree stats..")
             degree = degree_stats(reference_graphs, networkx_graphs, is_parallel=True,
                                   compute_emd=self.compute_emd)
+            to_log['degree'] = degree
             if wandb.run:
                 wandb.run.summary['degree'] = degree
 
@@ -798,14 +821,12 @@ class SpectreSamplingMetrics(nn.Module):
         # eigval_stats(eig_ref_list, eig_pred_list, max_eig=20, is_parallel=True, compute_emd=False)
         # spectral_filter_stats(eigvec_ref_list, eigval_ref_list, eigvec_pred_list, eigval_pred_list, is_parallel=False,
         #                       compute_emd=False)          # This is the one called wavelet
-        to_log = {}
 
         if 'spectre' in self.metrics_list:
             if local_rank == 0:
                 print("Computing spectre stats...")
             spectre = spectral_stats(reference_graphs, networkx_graphs, is_parallel=True, n_eigvals=-1,
                                      compute_emd=self.compute_emd)
-
             to_log['spectre'] = spectre
             if wandb.run:
               wandb.run.summary['spectre'] = spectre
@@ -842,7 +863,7 @@ class SpectreSamplingMetrics(nn.Module):
             acc = eval_acc_sbm_graph(networkx_graphs, refinement_steps=100, strict=True)
             to_log['sbm_acc'] = acc
             if wandb.run:
-                wandb.run.summary['sbmacc'] = acc
+                wandb.run.summary['sbm_acc'] = acc
 
         if 'planar' in self.metrics_list:
             if local_rank ==0:
@@ -868,94 +889,6 @@ class SpectreSamplingMetrics(nn.Module):
         if wandb.run:
             wandb.log(to_log, commit=False)
 
-    def test_result(self, generated_graphs: list, test=True):
-        reference_graphs = self.test_graphs if test else self.val_graphs
-        print(f"Computing sampling metrics between {len(generated_graphs)} generated graphs and {len(reference_graphs)}"
-              f" test graphs -- emd computation: {self.compute_emd}")
-        networkx_graphs = []
-        adjacency_matrices = []
-        print("Building networkx graphs...")
-        for graph in generated_graphs:
-            node_types, edge_types = graph
-            A = edge_types.bool().cpu().numpy()
-            adjacency_matrices.append(A)
-
-            nx_graph = nx.from_numpy_array(A)
-            networkx_graphs.append(nx_graph)
-
-        np.savez('generated_adjs.npz', *adjacency_matrices)
-
-
-        to_log = {}
-        if 'degree' in self.metrics_list:
-            print("Computing degree stats..")
-            degree = degree_stats(reference_graphs, networkx_graphs, is_parallel=True,
-                                  compute_emd=self.compute_emd)
-            to_log['degree'] = degree
-            if wandb.run:
-                wandb.run.summary['degree'] = degree
-
-
-
-        if 'spectre' in self.metrics_list:
-            print("Computing spectre stats...")
-            spectre = spectral_stats(reference_graphs, networkx_graphs, is_parallel=True, n_eigvals=-1,
-                                     compute_emd=self.compute_emd)
-
-            to_log['spectre'] = spectre
-            if wandb.run:
-              wandb.run.summary['spectre'] = spectre
-
-        if 'clustering' in self.metrics_list:
-            print("Computing clustering stats...")
-            clustering = clustering_stats(reference_graphs, networkx_graphs, bins=100, is_parallel=True,
-                                          compute_emd=self.compute_emd)
-            to_log['clustering'] = clustering
-            if wandb.run:
-                wandb.run.summary['clustering'] = clustering
-
-        if 'motif' in self.metrics_list:
-            print("Computing motif stats")
-            motif = motif_stats(reference_graphs, networkx_graphs, motif_type='4cycle', ground_truth_match=None, bins=100,
-                                compute_emd=self.compute_emd)
-            to_log['motif'] = motif
-            if wandb.run:
-                wandb.run.summary['motif'] = motif
-
-        if 'orbit' in self.metrics_list:
-            print("Computing orbit stats...")
-            orbit = orbit_stats_all(reference_graphs, networkx_graphs, compute_emd=self.compute_emd)
-            to_log['orbit'] = orbit
-            if wandb.run:
-                wandb.run.summary['orbit'] = orbit
-
-        if 'sbm' in self.metrics_list:
-            print("Computing accuracy...")
-            acc = eval_acc_sbm_graph(networkx_graphs, refinement_steps=100, strict=True)
-            to_log['sbm_acc'] = acc
-            if wandb.run:
-                wandb.run.summary['sbmacc'] = acc
-
-        if 'planar' in self.metrics_list:
-            print('Computing planar accuracy...')
-            planar_acc = eval_acc_planar_graph(networkx_graphs)
-            to_log['planar_acc'] = planar_acc
-            if wandb.run:
-                wandb.run.summary['planar_acc'] = planar_acc
-
-        if 'sbm' or 'planar' in self.metrics_list:
-            print("Computing all fractions...")
-            frac_unique, frac_unique_non_isomorphic, fraction_unique_non_isomorphic_valid = eval_fraction_unique_non_isomorphic_valid(
-                networkx_graphs, self.train_graphs, is_sbm_graph if 'sbm' in self.metrics_list else is_planar_graph)
-            frac_non_isomorphic = 1.0 - eval_fraction_isomorphic(networkx_graphs, self.train_graphs)
-            to_log.update({'sampling/frac_unique': frac_unique,
-                           'sampling/frac_unique_non_iso': frac_unique_non_isomorphic,
-                           'sampling/frac_unic_non_iso_valid': fraction_unique_non_isomorphic_valid,
-                           'sampling/frac_non_iso': frac_non_isomorphic})
-
-        print("Sampling statistics", to_log)
-        return to_log
-
     def reset(self):
         pass
 
@@ -975,7 +908,8 @@ class PlanarSamplingMetrics(SpectreSamplingMetrics):
 
 
 class SBMSamplingMetrics(SpectreSamplingMetrics):
-    def __init__(self, datamodule):
+    def __init__(self, datamodule, g2gc: Optional[Graph2GraphPairCompress]=None):
         super().__init__(datamodule=datamodule,
                          compute_emd=False,
-                         metrics_list=['degree', 'clustering', 'orbit', 'spectre', 'sbm'])
+                         metrics_list=['degree', 'clustering', 'orbit', 'spectre', 'sbm'],
+                         g2gc=g2gc)
