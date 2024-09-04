@@ -541,10 +541,6 @@ class DiscreteDenoisingDiffusion(pl.LightningModule):
         sampled_s = sampled_s.mask(node_mask, collapse=True)
         X, E, y = sampled_s.X, sampled_s.E, sampled_s.y
 
-
-
-
-
         molecule_list = []
         for i in range(batch_size):
             n = n_nodes[i]
