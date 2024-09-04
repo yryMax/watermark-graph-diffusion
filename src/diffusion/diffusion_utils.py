@@ -228,7 +228,7 @@ def check_issues_norm_values(gamma, norm_val1, norm_val2, num_stdevs=8):
             f'1 / norm_value = {1. / max_norm_value}')
 
 
-def sample_discrete_features(probX, probE, local_gen, node_mask):
+def sample_discrete_features(probX, probE, node_mask):
     ''' Sample features from multinomial distribution with given probabilities (probX, probE, proby)
         :param probX: bs, n, dx_out        node features
         :param probE: bs, n, n, de_out     edge features
@@ -245,7 +245,7 @@ def sample_discrete_features(probX, probE, local_gen, node_mask):
     probX = probX.reshape(bs * n, -1)  # (bs * n, dx_out)
 
     # Sample X
-    X_t = probX.multinomial(1, generator=local_gen)
+    X_t = probX.multinomial(1)
     X_t = X_t.reshape(bs, n)  # (bs, n)
 
     # Noise E
@@ -258,7 +258,7 @@ def sample_discrete_features(probX, probE, local_gen, node_mask):
     probE = probE.reshape(bs * n * n, -1)  # (bs * n * n, de_out)
 
     # Sample E
-    E_t = probE.multinomial(1, generator=local_gen).reshape(bs, n, n)
+    E_t = probE.multinomial(1).reshape(bs, n, n)
     E_t = torch.triu(E_t, diagonal=1)
     E_t = (E_t + torch.transpose(E_t, 1, 2))
 
