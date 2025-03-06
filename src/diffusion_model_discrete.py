@@ -614,7 +614,7 @@ class DiscreteDenoisingDiffusion(pl.LightningModule):
 
             arange = torch.arange(n_max, device=self.device).unsqueeze(0).expand(current_batch_size, -1)
             node_mask = arange < n_nodes.unsqueeze(1)
-            z_T = diffusion_utils.sample_discrete_feature_noise_with_message(limit_dist=self.limit_dist, node_mask=node_mask)
+            z_T = diffusion_utils.sample_discrete_feature_noise(limit_dist=self.limit_dist, node_mask=node_mask)
             X, E, y = z_T.X, z_T.E, z_T.y
 
             assert (E == torch.transpose(E, 1, 2)).all()
@@ -625,7 +625,7 @@ class DiscreteDenoisingDiffusion(pl.LightningModule):
                 s_norm = s_array / self.T
                 t_norm = t_array / self.T
 
-                sampled_s, discrete_sampled_s = self.sample_p_zs_given_zt(s_norm, t_norm, X, E, y, node_mask)
+                sampled_s, discrete_sampled_s = self.sample_p_zs_given_zt(s_norm, t_norm, X, E, y, None, node_mask)
                 X, E, y = sampled_s.X, sampled_s.E, sampled_s.y
 
             sampled_s = sampled_s.mask(node_mask, collapse=True)
