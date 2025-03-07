@@ -104,16 +104,12 @@ def get_model_flickr():
 if __name__ == '__main__':
 
 
-    argpath = '/mnt/c/repo/watermark-graph-diffusion/model/facebook.pkl'
-    modelpath = '/mnt/c/repo/watermark-graph-diffusion/model/facebook-epoch=699.ckpt'
-    args = pickle.load(open(argpath, 'rb'))
-    model = DiscreteDenoisingDiffusion.load_from_checkpoint(modelpath, map_location=torch.device('cuda'), **args).to('cuda')
-    model.eval()
+    model = get_model_sbm()
 
-    samples = model.sample_batch_simplified(1)
-    print(samples[0].size(), samples[1].size())
-    #model_perfs = model.sampling_metrics.test_result(samples)
-    #print(model_perfs)
+    samples = model.sample_batch_simplified(100, 10)
+    #print(samples[0].size(), samples[1].size())
+    model_perfs = model.sampling_metrics.test_result(samples)
+    print(model_perfs)
 
 
     #prob = model.get_node_prob()
